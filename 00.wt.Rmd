@@ -1,0 +1,198 @@
+```{r function section, echo=FALSE,include=FALSE}
+
+source("00.import.R")
+
+```
+
+---
+title: "`r paste("Agonist-Induced Functional Analysis and Cell Sorting is a novel tool to uncover interneuron impairment: Fragile X Syndrome as a proof of concept")`"
+author: "`r paste("K.Lebrigand")`"
+date: "`r format(Sys.time(), '%d %B, %Y')`"
+output:
+  html_document:
+    highlight: tango
+    theme: flatly
+    toc: yes
+---
+
+# Analyis WT (baseline)
+
+```{r message=FALSE, warning=FALSE, echo=FALSE, eval=T, fig.height=6, fig.width=8}
+
+data <- Read10X("data/WT_baseline/")
+wt <- CreateSeuratObject(data)
+wt[['sample']] <- "baseline"
+mito.genes <- grep(pattern = "^mt-", x = rownames(wt@assays$RNA), value = TRUE)
+dropouts <- Matrix::colSums(wt@assays$RNA@data == 0)/nrow(wt@assays$RNA)
+ribo.genes <- grep(pattern = "^Rp[sl]", x = rownames(wt@assays$RNA), value = TRUE)
+percent.mito <- Matrix::colSums(wt@assays$RNA[mito.genes, ])/Matrix::colSums(wt@assays$RNA)
+percent.ribo <- Matrix::colSums(wt@assays$RNA[ribo.genes, ])/Matrix::colSums(wt@assays$RNA)
+wt[['percent.mito']] <- percent.mito
+wt[['percent.ribo']] <- percent.ribo
+wt[['dropouts']] <- dropouts
+VlnPlot(wt, features = c("nFeature_RNA", "nCount_RNA","dropouts","percent.ribo","percent.mito"), ncol=5, cols = "lightsteelblue3")
+dim(wt@assays$RNA)
+wt <- subset(wt, subset = dropouts < 0.95)
+dim(wt@assays$RNA)
+VlnPlot(wt, features = c("nFeature_RNA", "nCount_RNA","dropouts","percent.ribo","percent.mito"), ncol=5, cols = "lightsteelblue3")
+
+```
+
+```{r message=FALSE, warning=FALSE, echo=FALSE, eval=T, fig.height=6, fig.width=8}
+
+wt <- SCTransform(object = wt, verbose = FALSE)
+wt <- RunPCA(wt, verbose = FALSE)
+wt <- RunUMAP(object = wt, dims = 1:30)
+wt <- FindNeighbors(object = wt, do.plot=TRUE, dims = 1:30)
+wt <- FindClusters(object = wt, resolution=0.2)
+DimPlot(object = wt, reduction = "umap", label=TRUE)
+
+```
+
+```{r message=FALSE, warning=FALSE, echo=FALSE, eval=T, fig.height=8, fig.width=12}
+
+wt.markers <- FindAllMarkers(object = wt, only.pos = TRUE, min.pct = 0.25, thresh.use = 0.25)
+top5.wt <- wt.markers %>% group_by(cluster) %>% top_n(5, avg_logFC)
+top5.wt <- top5.wt[top5.wt$gene %in% VariableFeatures(wt),]
+DoHeatmap(wt, features=top5.wt$gene)
+write.table(wt.markers, file="output/wt.baseline.csv", sep=",")
+
+```
+
+#Cluster relabeling
+
+```{r message=FALSE, warning=FALSE, echo=FALSE, eval=T, fig.height=6, fig.width=8}
+
+new.cluster.ids <- c("Neurod1", "Cd63", "Meis2", "Top2a", "Calb2")
+names(x = new.cluster.ids) <- levels(x = wt)
+wt <- RenameIdents(object = wt, new.cluster.ids)
+DimPlot(object = wt, label = TRUE, pt.size = 1) + NoLegend()
+
+saveRDS(wt, "output/wt.baseline.rds")
+
+```
+
+```{r message=FALSE, warning=FALSE, echo=FALSE, eval=T, fig.height=6, fig.width=8}
+
+# Velocyto
+#ldat <- read.loom.matrices("ressources/WT_baseline.loom")
+#emat <- ldat$spliced
+#nmat <- ldat$unspliced
+#colnames(emat) <- gsub("WT_baseline:", "", gsub("x", "", colnames(emat)))
+#colnames(nmat) <- gsub("WT_baseline:", "", gsub("x", "", colnames(nmat)))
+#tNames <- emat@Dimnames[[2]] %in% colnames(wt@assays$RNA)
+#emat <- emat[,tNames]
+#nmat <- nmat[,tNames]
+#cluster.label <- wt@active.ident
+#cell.colors <- col[as.numeric(wt@active.ident)]
+#names(cell.colors) <- names(cluster.label)
+#emb <- wt@reductions$umap@cell.embeddings
+#cell.dist <- as.dist(1-cor(t(emb)))
+#emat <- filter.genes.by.cluster.expression(emat,cluster.label,min.max.cluster.average = 0.5)
+#nmat <- filter.genes.by.cluster.expression(nmat,cluster.label,min.max.cluster.average = 0.05)
+#length(intersect(rownames(emat),rownames(nmat)))
+#fit.quantile <- 0.02
+#rvel.cd <- gene.relative.velocity.estimates(emat,nmat,deltaT=1,kCells=20,fit.quantile=fit.quantile,cell.dist=cell.dist)
+#show.velocity.on.embedding.cor(emb,rvel.cd,n=300,scale='sqrt',cell.colors=ac(cell.colors,alpha=0.5),cex=0.8,arrow.scale=5,show.grid.flow=TRUE,min.grid.cell.mass=0.5,grid.n=40,arrow.lwd=1,do.par=F,cell.border.alpha = 0.1,cell.dist=cell.dist)
+
+```
+
+# Analyis WT_AMPA
+
+```{r message=FALSE, warning=FALSE, echo=FALSE, eval=T, fig.height=6, fig.width=8}
+
+data <- Read10X("data/WT_ampa/")
+wt.ampa <- CreateSeuratObject(data)
+wt.ampa[['sample']] <- "ampa"
+mito.genes <- grep(pattern = "^mt-", x = rownames(wt.ampa@assays$RNA), value = TRUE)
+dropouts <- Matrix::colSums(wt.ampa@assays$RNA@data == 0)/nrow(wt.ampa@assays$RNA)
+ribo.genes <- grep(pattern = "^Rp[sl]", x = rownames(wt.ampa@assays$RNA), value = TRUE)
+percent.mito <- Matrix::colSums(wt.ampa@assays$RNA[mito.genes, ])/Matrix::colSums(wt.ampa@assays$RNA)
+percent.ribo <- Matrix::colSums(wt.ampa@assays$RNA[ribo.genes, ])/Matrix::colSums(wt.ampa@assays$RNA)
+wt.ampa[['percent.mito']] <- percent.mito
+wt.ampa[['percent.ribo']] <- percent.ribo
+wt.ampa[['dropouts']] <- dropouts
+
+VlnPlot(wt.ampa, features = c("nFeature_RNA", "nCount_RNA","dropouts","percent.ribo","percent.mito"), ncol=5, cols = "lightsteelblue3")
+dim(wt.ampa@assays$RNA)
+wt.ampa <- subset(wt.ampa, subset = dropouts < 0.95)
+dim(wt.ampa@assays$RNA)
+VlnPlot(wt.ampa, features = c("nFeature_RNA", "nCount_RNA","dropouts","percent.ribo","percent.mito"), ncol=5, cols = "lightsteelblue3")
+
+```
+
+```{r message=FALSE, warning=FALSE, echo=FALSE, eval=T, fig.height=6, fig.width=8}
+
+wt.ampa <- SCTransform(object = wt.ampa, verbose = FALSE)
+wt.ampa <- RunPCA(wt.ampa, verbose = FALSE)
+wt.ampa <- RunUMAP(object = wt.ampa, dims = 1:30)
+wt.ampa <- FindNeighbors(object = wt.ampa, do.plot=TRUE, dims = 1:30)
+wt.ampa <- FindClusters(object = wt.ampa, resolution=0.2)
+DimPlot(object = wt.ampa, reduction = "umap", label=TRUE)
+
+```
+
+```{r message=FALSE, warning=FALSE, echo=FALSE, eval=T, fig.height=8, fig.width=12}
+
+wt.ampa.markers <- FindAllMarkers(object = wt.ampa, only.pos = TRUE, min.pct = 0.25, thresh.use = 0.25)
+top5.wt.ampa <- wt.ampa.markers %>% group_by(cluster) %>% top_n(5, avg_logFC)
+top5.wt.ampa <- top5.wt.ampa[top5.wt.ampa$gene %in% VariableFeatures(wt.ampa),]
+DoHeatmap(wt.ampa, features=top5.wt.ampa$gene)
+write.table(wt.ampa.markers, file="output/wt.ampa.csv", sep=",")
+
+```
+
+# Cluster relabeling
+
+```{r message=FALSE, warning=FALSE, echo=FALSE, eval=T, fig.height=6, fig.width=8}
+
+new.cluster.ids <- c("Meis2","Neurod1","Cd63","Top2a","Sema3c","Igfbp7", "Olig1", "Akap7")
+names(x = new.cluster.ids) <- levels(x = wt.ampa)
+wt.ampa <- RenameIdents(object = wt.ampa, new.cluster.ids)
+DimPlot(object = wt.ampa, label = TRUE, pt.size = 1) + NoLegend()
+saveRDS(wt.ampa, "output/wt.ampa.rds")
+
+table(wt.ampa@active.ident)
+
+```
+
+# Removing cluster Igfbp7 and Olig1, saving for integration
+
+```{r message=FALSE, warning=FALSE, echo=FALSE, eval=T, fig.height=6, fig.width=8}
+
+wt.ampa <- subset(wt.ampa, idents=c("Meis2","Neurod1","Cd63","Top2a","Sema3c", "Akap7"))
+wt.ampa <- SCTransform(object = wt.ampa, verbose = FALSE)
+wt.ampa <- RunPCA(wt.ampa, verbose = FALSE)
+wt.ampa <- RunUMAP(object = wt.ampa, dims = 1:30)
+wt.ampa <- FindNeighbors(object = wt.ampa, do.plot=TRUE, dims = 1:30)
+wt.ampa <- FindClusters(object = wt.ampa, resolution=0.2)
+DimPlot(object = wt.ampa, reduction = "umap", label=TRUE)
+
+saveRDS(wt.ampa, "output/wt.ampa.clean.rds")
+
+```
+
+```{r message=FALSE, warning=FALSE, echo=FALSE, eval=T, fig.height=6, fig.width=8}
+
+# Velocyto
+#ldat <- read.loom.matrices("ressources/WT_ampa.loom")
+#emat <- ldat$spliced
+#nmat <- ldat$unspliced
+#colnames(emat) <- gsub("WT_ampa:", "", gsub("x", "", colnames(emat)))
+#colnames(nmat) <- gsub("WT_ampa:", "", gsub("x", "", colnames(nmat)))
+#tNames <- emat@Dimnames[[2]] %in% colnames(wt.ampa@assays$RNA)
+#emat <- emat[,tNames]
+#nmat <- nmat[,tNames]
+#cluster.label <- wt.ampa@active.ident
+#cell.colors <- col[as.numeric(wt.ampa@active.ident)]
+#names(cell.colors) <- names(cluster.label)
+#emb <- wt.ampa@reductions$umap@cell.embeddings
+#cell.dist <- as.dist(1-cor(t(emb)))
+#emat <- filter.genes.by.cluster.expression(emat,cluster.label,min.max.cluster.average = 0.5)
+#nmat <- filter.genes.by.cluster.expression(nmat,cluster.label,min.max.cluster.average = 0.05)
+#length(intersect(rownames(emat),rownames(nmat)))
+#fit.quantile <- 0.02
+#rvel.cd <- gene.relative.velocity.estimates(emat,nmat,deltaT=1,kCells=20,fit.quantile=fit.quantile,cell.dist=cell.dist)
+#show.velocity.on.embedding.cor(emb,rvel.cd,n=300,scale='sqrt',cell.colors=ac(cell.colors,alpha=0.5),cex=0.8,arrow.scale=5,show.grid.flow=TRUE,min.grid.cell.mass=0.5,grid.n=40,arrow.lwd=1,do.par=F,cell.border.alpha = 0.1,cell.dist=cell.dist)
+
+```

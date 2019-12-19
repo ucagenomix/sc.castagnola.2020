@@ -1,0 +1,203 @@
+```{r function section, echo=FALSE,include=FALSE}
+
+source("00.import.R")
+
+```
+
+---
+title: "`r paste("Agonist-Induced Functional Analysis and Cell Sorting is a novel tool to uncover interneuron impairment: Fragile X Syndrome as a proof of concept")`"
+author: "`r paste("K.Lebrigand")`"
+date: "`r format(Sys.time(), '%d %B, %Y')`"
+output:
+  html_document:
+    highlight: tango
+    number_sections: yes
+    theme: flatly
+    toc: yes
+---
+
+# Integration of both datasets
+
+```{r message=FALSE, warning=FALSE, echo=FALSE, eval=T, fig.height=6, fig.width=16}
+
+wt <- readRDS("output/wt.baseline.rds")
+wt.ampa <- readRDS("output/wt.ampa.clean.rds")
+wt[['cluster']] <- wt@active.ident
+wt.ampa[['cluster']] <- wt.ampa@active.ident
+wt <- RenameCells(wt, add.cell.id = "baseline")
+wt.ampa <- RenameCells(wt.ampa, add.cell.id = "ampa")
+
+library(devtools)
+library(ggplot2)
+detach("package:Seurat", unload=TRUE)
+library(Seurat, lib.loc = "/home/lebrigand/R-dev/")
+
+features <- SelectIntegrationFeatures(object.list = c(wt,wt.ampa), nfeatures = 3000)
+options(future.globals.maxSize = 4096 * 1024^2)
+list <- PrepSCTIntegration(object.list = c(wt,wt.ampa), anchor.features = features, verbose = FALSE)
+anchors <- FindIntegrationAnchors(object.list = list, normalization.method = "SCT", anchor.features = features, verbose = FALSE)
+aggr <- IntegrateData(anchorset = anchors, normalization.method = "SCT", verbose = FALSE)
+aggr <- RunPCA(aggr, verbose = FALSE)
+aggr <- RunUMAP(aggr, dims = 1:30)
+aggr <- FindNeighbors(object = aggr, do.plot=TRUE, dims = 1:30)
+aggr <- FindClusters(object = aggr, resolution=0.6)
+
+detach("package:Seurat", unload=TRUE)
+library(Seurat)
+
+#plots <- DimPlot(aggr, group.by = c("sample","cluster"), combine = FALSE)
+#plots <- lapply(X = plots, FUN = function(x) x + theme(legend.position = "top") + guides(color = guide_legend(nrow = 3, byrow = TRUE, #override.aes = list(size = 3))))
+#CombinePlots(plots)
+
+DimPlot(aggr, label=TRUE)
+
+```
+
+# Correlation heatmap
+
+```{r message=FALSE, warning=FALSE, echo=FALSE, eval=T, fig.height=6, fig.width=8}
+
+mnmat <- c()
+uniq <- unique(aggr@active.ident)
+aggr@meta.data$cluster <- aggr@active.ident
+for(i in 1:length(uniq)){
+  mnmat <- cbind(mnmat, apply(as.matrix(aggr@assays$RNA@data[, aggr@meta.data$cluster==uniq[i]]), 1, mean))
+}
+
+colnames(mnmat) <- as.vector(unique(aggr@active.ident))
+ct=cor(mnmat)
+pheatmap(ct)
+
+median(aggr@meta.data$nCount_RNA)
+dim(aggr)
+table(aggr@meta.data$sample)
+
+```
+
+## Gene Markers
+
+```{r message=FALSE, warning=FALSE, echo=FALSE, eval=T, fig.height=10, fig.width=8 }
+
+DefaultAssay(aggr) <- "RNA"
+aggr <- NormalizeData(aggr)
+aggr <- ScaleData(aggr)
+markers <- FindAllMarkers(object = aggr, only.pos = TRUE, min.pct = 0.25, logfc.threshold = 0.25)
+top5 <- markers %>% group_by(cluster) %>% top_n(5, avg_logFC)
+DoHeatmap(aggr, features=top5$gene, size=3.5)
+write.table(markers, file="output/integrated.clusters.csv", sep=",")
+
+```
+
+# Cluster relabeling
+
+```{r message=FALSE, warning=FALSE, echo=FALSE, eval=T, fig.height=6, fig.width=8}
+
+new.cluster.ids <- c("Inh-Sox4","Ex-Sept4","Ex-Top2a","Ex-Neurod2","Ex-Selm", "Inh-Synpr", "Inh-Top2a", "Sema3c", "Akap7")
+names(x = new.cluster.ids) <- levels(x = aggr)
+aggr <- RenameIdents(object = aggr, new.cluster.ids)
+
+my_levels <- c("Ex-Neurod2","Ex-Sept4","Ex-Selm","Ex-Top2a","Inh-Top2a", "Inh-Sox4", "Inh-Synpr", "Sema3c", "Akap7")
+aggr@active.ident <- factor(x = aggr@active.ident, levels = my_levels)
+
+DimPlot(aggr, label=TRUE, cols = cell_type_color)
+
+saveRDS(aggr, "output/aggr.rds")
+
+freq_table <- table(aggr@active.ident, aggr@meta.data[, "sample"])
+freq_table
+
+pdf("figures.pdf", width=8, height=6, useDingbats=FALSE)
+DimPlot(object = aggr, pt.size = 1, cols = cell_type_color)
+DimPlot(object = aggr, group.by="sample", pt.size = 1, cols = cell_type_color)
+FeaturePlot(aggr, c("Meis2","Neurod1","Neurod2","Gad2"), pt.size = 1, col=c("grey","red"))
+FeaturePlot(aggr, c("Top2a","Top2a","Top2a","Top2a"), pt.size = 1, col=c("grey","red"))
+dev.off()
+
+pdf("barplot.pdf", width=6, height=8, useDingbats=FALSE)
+freq_table <- prop.table(x = table(aggr@active.ident, aggr@meta.data[, "sample"]), margin = 2)*100
+freq_table
+tmp <- melt(freq_table)
+names(tmp) <- c("cluster", "sample", "percentage")
+#tmp<- tmp[seq(dim(tmp)[1],1),]
+ggplot(tmp, aes(x=sample, y=percentage, fill=cluster)) + 
+      geom_bar(stat="identity", position = position_fill(reverse = TRUE)) +
+      scale_y_discrete(limits=c("Ex-Neurod2","Ex-Sept4","Ex-Selm","Ex-Top2a","Inh-Top2a", "Inh-Sox4", "Inh-Synpr", "Sema3c", "Akap7")) + 
+      scale_fill_manual(values=cell_type_color) +
+      theme_minimal()
+dev.off()
+
+DefaultAssay(aggr) <- "RNA"
+aggr <- NormalizeData(aggr)
+aggr <- ScaleData(aggr)
+markers <- FindAllMarkers(object = aggr, only.pos = TRUE, min.pct = 0.25, logfc.threshold = 0.25)
+write.table(markers, file="output/integrated.labels.csv", sep=",")
+
+DefaultAssay(object = aggr) <- "RNA"
+countTable <- data.frame(GetAssayData(aggr))
+aggr[['cell_type']] <- aggr@active.ident
+metadata <- aggr@meta.data
+cell_type_order <- c("Ex-Neurod2","Ex-Sept4","Ex-Selm","Ex-Top2a","Inh-Top2a", "Inh-Sox4", "Inh-Synpr", "Sema3c", "Akap7")
+
+x.markers <- read.table("output/integrated.labels.csv",sep = ",",header = T)
+a <- x.markers %>%  filter(cluster%in%c("Ex-Neurod2","Ex-Sept4","Ex-Selm","Ex-Top2a","Inh-Top2a", "Inh-Sox4", "Inh-Synpr", "Sema3c", "Akap7"))%>% group_by(cluster) %>% top_n(n = 10, wt = avg_logFC)
+markers <- as.character(unique(a[order(match(a$cluster, cell_type_order)),]$gene))
+markers_flt_count <- countTable[markers, ]
+
+# gene markers of manuscript --> heatmap2.pdf
+#markers <- c('Dcx','Gad1','Gad2','Dlx6','Dlx1','Dlx5','Dlx2','Slc17a7','Slc17a6','Nrn1','Neurod1','Neurod2','Top2a','Ube2c','Mki67','Hmgb2','Cenpf','Selm','Meis1','Pax6','E2f1','Cog7','Cd63','Tiam2','Nrxn3','Pbx1','Sox4','Synpr','Calb2','Pbx3','Sema3c','Id2','Cnr1','Cldn3','Akap7','Cttnbp2','Hes6','Ccnd2','Apc','Nrxn1','Rbfox3','Map1b','Snap25','Grin2b','Pclo','Mapt','Kcnb2','Kcna1')
+#markers_flt_count <- countTable[markers, ]
+
+markers_count <- matrix(0, nrow = length(markers), ncol = length(cell_type_order))
+colnames(markers_count) <- c("Ex-Neurod2","Ex-Sept4","Ex-Selm","Ex-Top2a","Inh-Top2a", "Inh-Sox4", "Inh-Synpr", "Sema3c", "Akap7")
+rownames(markers_count) <- markers
+
+for (i in 1:ncol(markers_count)){
+  print(colnames(markers_count)[i])
+  cell_names <- rownames(metadata[metadata$cell_type == colnames(markers_count)[i], ])
+  markers_count[, colnames(markers_count)[i]] <- rowMeans(markers_flt_count[, cell_names])
+}
+
+flexible_normalization <- function(data_in, by_row=TRUE){
+  if(by_row){
+    row_mean <- apply(data_in,1,mean)
+    row_sd   <- apply(data_in,1,sd)
+    output <- data_in
+    for(i in 1:dim(data_in)[1]){
+      output[i,] <- (data_in[i,] - row_mean[i])/row_sd[i]
+    }
+  }
+  #### if by column
+  if(!by_row){
+    col_mean <- apply(data_in,2,mean)
+    col_sd   <- apply(data_in,2,sd)
+    output <- data_in
+    for(i in 1:dim(data_in)[2]){
+      output[,i] <- (data_in[,i] - col_mean[i])/col_sd[i]
+    }
+  }
+  return(output)
+}
+
+markers_count <- flexible_normalization(markers_count, by_row = T)
+markers_count[markers_count > 2] <- 2
+markers_count[markers_count < -1.5] <- -1.5
+
+annotation <- data.frame(CellType = factor(colnames(markers_count), levels = cell_type_order))
+rownames(annotation) <- colnames(markers_count)
+ann_colors <- list(CellType = cell_type_color)
+pp <- pheatmap::pheatmap(markers_count, cluster_rows = F, cluster_cols = F, 
+                         annotation_col = annotation, annotation_colors = ann_colors,     
+                         angle_col = 0, annotation_legend = F)
+pdf("figures/heatmap.pdf", width=8, height=10, useDingbats=FALSE)
+pp
+dev.off()
+
+
+```
+
+# Session Info
+
+```{r sessinf}
+sessionInfo()
+```
+

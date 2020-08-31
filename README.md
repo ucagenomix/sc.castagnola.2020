@@ -1,6 +1,6 @@
 
 # Agonist-Induced Functional Analysis and Cell Sorting is a novel tool to uncover interneuron impairment: Fragile X Syndrome as a proof of concept
-**Sara Castagnola, Julie Cazareth, Kevin Lebrigand, Marielle Jarjat, Virginie Magnone, Sebastien Delhaye, Frederic Brau, Barbara Bardoni* & Thomas Maurin1**
+**Sara Castagnola, Julie Cazareth, Kevin Lebrigand, Marielle Jarjat, Virginie Magnone, Sebastien Delhaye, Frederic Brau, Barbara Bardoni & Thomas Maurin1**
 
 
 To get a better insight into the dynamic interaction between cells and environment in brain, we developed the agonist-induced Functional Analysis and Cell Sorting (aiFACS) technique, which allows the simultaneous stimulation, recording and sorting of neurons from mouse whole brains upon pharmacological stimulation in real time. By coupling aiFACS with single cell sequencing we were able to identify the enrichment of our preparation in interneurons, that we could further classify in several sub-clusters by means of our integrated approach, thus providing new elements for their classification.

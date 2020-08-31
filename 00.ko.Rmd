@@ -1,0 +1,131 @@
+```{r function section, echo=FALSE,include=FALSE}
+
+setwd("/data/10x_data/10x_bardoni/dec2019")
+source("00.import.R")
+
+```
+
+---
+title: "`r paste("Thomas Maurin")`"
+author: "`r paste("kevin lebrigand")`"
+date: "`r format(Sys.time(), '%d %B, %Y')`"
+output:
+  html_document:
+    highlight: tango
+    theme: flatly
+    toc: yes
+---
+
+# Analyis KO (ampa)
+
+```{r message=FALSE, warning=FALSE, echo=FALSE, eval=T, fig.height=6, fig.width=8}
+
+data <- Read10X("/data/10x_data/10x_bardoni/KO_ampa/outs/filtered_gene_bc_matrices/mm10/")
+ko <- CreateSeuratObject(data)
+ko[['sample']] <- "ko"
+mito.genes <- grep(pattern = "^mt-", x = rownames(ko@assays$RNA), value = TRUE)
+dropouts <- Matrix::colSums(ko@assays$RNA@data == 0)/nrow(ko@assays$RNA)
+ribo.genes <- grep(pattern = "^Rp[sl]", x = rownames(ko@assays$RNA), value = TRUE)
+percent.mito <- Matrix::colSums(ko@assays$RNA[mito.genes, ])/Matrix::colSums(ko@assays$RNA)
+percent.ribo <- Matrix::colSums(ko@assays$RNA[ribo.genes, ])/Matrix::colSums(ko@assays$RNA)
+ko[['percent.mito']] <- percent.mito
+ko[['percent.ribo']] <- percent.ribo
+ko[['dropouts']] <- dropouts
+VlnPlot(ko, features = c("nFeature_RNA", "nCount_RNA","dropouts","percent.ribo","percent.mito"), ncol=5, cols = "lightsteelblue3")
+dim(ko@assays$RNA)
+
+```
+
+```{r message=FALSE, warning=FALSE, echo=FALSE, eval=T, fig.height=6, fig.width=8}
+
+ko <- SCTransform(object = ko, verbose = FALSE)
+ko <- RunPCA(ko, verbose = FALSE)
+ko <- RunUMAP(object = ko, dims = 1:30)
+ko <- FindNeighbors(object = ko, do.plot=TRUE, dims = 1:30)
+ko <- FindClusters(object = ko, resolution=0.2)
+DimPlot(object = ko, reduction = "umap", label=TRUE)
+
+VlnPlot(ko, features = c("nFeature_RNA", "dropouts"))
+
+```
+
+```{r message=FALSE, warning=FALSE, echo=FALSE, eval=T, fig.height=8, fig.width=12}
+
+ko.markers <- FindAllMarkers(object = ko, only.pos = TRUE, min.pct = 0.25, thresh.use = 0.25)
+top5.ko <- ko.markers %>% group_by(cluster) %>% top_n(5, avg_logFC)
+top5.ko <- top5.ko[top5.ko$gene %in% VariableFeatures(ko),]
+DoHeatmap(ko, features=top5.ko$gene)
+
+table(ko@active.ident)
+
+```
+
+# remove Hba-a2++ cells (Hba-a2 < 2) + cells dropouts > 0.95
+
+```{r message=FALSE, warning=FALSE, echo=FALSE, eval=T, fig.height=6, fig.width=8}
+
+dim(ko@assays$RNA)
+ko <- subset(ko, subset = `Hba-a2` < 2)
+dim(ko@assays$RNA)
+ko <- subset(ko, subset = dropouts < 0.95)
+dim(ko@assays$RNA)
+
+ko <- SCTransform(object = ko, verbose = FALSE)
+ko <- RunPCA(ko, verbose = FALSE)
+ko <- RunUMAP(object = ko, dims = 1:30)
+ko <- FindNeighbors(object = ko, do.plot=TRUE, dims = 1:30)
+ko <- FindClusters(object = ko, resolution=0.2)
+DimPlot(object = ko, reduction = "umap", label=TRUE)
+
+```
+
+```{r message=FALSE, warning=FALSE, echo=FALSE, eval=T, fig.height=8, fig.width=12}
+
+ko.markers <- FindAllMarkers(object = ko, only.pos = TRUE, min.pct = 0.25, thresh.use = 0.25)
+top5.ko <- ko.markers %>% group_by(cluster) %>% top_n(5, avg_logFC)
+top5.ko <- top5.ko[top5.ko$gene %in% VariableFeatures(ko),]
+DoHeatmap(ko, features=top5.ko$gene)
+write.table(ko.markers, file="ko.ampa.csv", sep=",")
+
+```
+
+# Cluster relabeling
+
+```{r message=FALSE, warning=FALSE, echo=FALSE, eval=T, fig.height=6, fig.width=8}
+
+new.cluster.ids <- c("Meis2", "Neurod1", "Olig1", "Olig1", "Top2a", "Sema3c", "Akap7")
+names(x = new.cluster.ids) <- levels(x = ko)
+ko <- RenameIdents(object = ko, new.cluster.ids)
+DimPlot(object = ko, label = TRUE, pt.size = 1) + NoLegend()
+
+saveRDS(ko, "ko.ampa.rds")
+table(ko@active.ident)
+
+```
+
+# Removing clusters Olig1 (315 cells), saving for integration
+
+```{r message=FALSE, warning=FALSE, echo=FALSE, eval=T, fig.height=6, fig.width=8}
+
+ko.ampa <- ko
+ko.ampa <- subset(ko.ampa, idents=c("Meis2","Neurod1","Top2a","Sema3c", "Akap7"))
+ko.ampa <- SCTransform(object = ko.ampa, verbose = FALSE)
+ko.ampa <- RunPCA(ko.ampa, verbose = FALSE)
+ko.ampa <- RunUMAP(object = ko.ampa, dims = 1:30)
+ko.ampa <- FindNeighbors(object = ko.ampa, do.plot=TRUE, dims = 1:30)
+ko.ampa <- FindClusters(object = ko.ampa, resolution=0.2)
+DimPlot(object = ko.ampa, reduction = "umap", label=TRUE)
+
+saveRDS(ko.ampa, "ko.ampa.clean.rds")
+
+```
+
+```{r message=FALSE, warning=FALSE, echo=FALSE, eval=T, fig.height=8, fig.width=12}
+
+ko.markers <- FindAllMarkers(object = ko.ampa, only.pos = TRUE, min.pct = 0.25, thresh.use = 0.25)
+top5.ko <- ko.markers %>% group_by(cluster) %>% top_n(5, avg_logFC)
+top5.ko <- top5.ko[top5.ko$gene %in% VariableFeatures(ko),]
+DoHeatmap(ko.ampa, features=top5.ko$gene)
+write.table(ko.markers, file="ko.ampa.clean.csv", sep=",")
+
+```
